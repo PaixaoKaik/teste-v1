@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meu Painel ESP32-C3</title>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f0f2f5; text-align: center; padding: 20px; }
+        .box { background: white; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        button { background: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 25px; font-size: 16px; cursor: pointer; }
+        #statusBtn { font-size: 24px; font-weight: bold; color: gray; }
+        .pressionado { color: red !important; }
+    </style>
+</head>
+<body>
+
+    <h1>Validador de Produto</h1>
+    <button onclick="conectar()">1. Conectar via Bluetooth</button>
+
+    <div class="box">
+        <h3>Localização GPS (ATGM)</h3>
+        <p id="txtGPS">Aguardando dados...</p>
+    </div>
+
+    <div class="box">
+        <h3>Status do Botão</h3>
+        <div id="statusBtn">SOLTO</div>
+    </div>
+
+    <script>
+        // Esses IDs precisam ser IGUAIS aos que vamos colocar no ESP32
+        const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+        const GPS_UUID     = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+        const BOTAO_UUID   = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+
+        async function conectar() {
+            try {
+                // Procura o ESP32
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ namePrefix: 'ESP32' }],
+                    optionalServices: [SERVICE_UUID]
+                });
+
+                const server = await device.gatt.connect();
+                const service = await server.getPrimaryService(SERVICE_UUID);
+
+                // Configura o GPS
+                const gpsChar = await service.getCharacteristic(GPS_UUID);
+                gpsChar.startNotifications();
+                gpsChar.addEventListener('characteristicvaluechanged', e => {
+                    let dado = new TextDecoder().decode(e.target.value);
+                    document.getElementById('txtGPS').innerText = dado;
+                });
+
+                // Configura o Botão
+                const botChar = await service.getCharacteristic(BOTAO_UUID);
+                botChar.startNotifications();
+                botChar.addEventListener('characteristicvaluechanged', e => {
+                    let valor = e.target.value.getUint8(0);
+                    const el = document.getElementById('statusBtn');
+                    el.innerText = valor === 1 ? "PRESSIONADO" : "SOLTO";
+                    el.className = valor === 1 ? "pressionado" : "";
+                });
+
+                alert("Conectado com sucesso!");
+            } catch (err) {
+                alert("Erro ao conectar: " + err);
+            }
+        }
+    </script>
+</body>
+</html>
