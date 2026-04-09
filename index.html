@@ -32,6 +32,8 @@
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         const GPS_UUID     = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
         const BOTAO_UUID   = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+        const AUDIO_UUID = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
+let audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
 
         async function conectar() {
             try {
@@ -61,6 +63,27 @@
                     el.innerText = valor === 1 ? "PRESSIONADO" : "SOLTO";
                     el.className = valor === 1 ? "pressionado" : "";
                 });
+                // Configura o Áudio
+const audioChar = await service.getCharacteristic(AUDIO_UUID);
+audioChar.startNotifications();
+
+audioChar.addEventListener('characteristicvaluechanged', e => {
+    let data = new Uint8Array(e.target.value.buffer);
+    tocarAudio(data);
+});
+
+function tocarAudio(data) {
+    let buffer = audioCtx.createBuffer(1, data.length, 16000);
+    let channelData = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+        // Converte de volta de 8-bit para sinal de áudio (-1.0 a 1.0)
+        channelData[i] = (data[i] - 128) / 128.0;
+    }
+    let source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
+    source.start();
+}
 
                 alert("Conectado com sucesso!");
             } catch (err) {
