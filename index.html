@@ -3,41 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meu Painel ESP32-C3</title>
+    <title>Painel Completo ESP32-C3</title>
     <style>
-        body { font-family: Arial, sans-serif; background: #f0f2f5; text-align: center; padding: 20px; }
-        .box { background: white; border-radius: 15px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        button { background: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 25px; font-size: 16px; cursor: pointer; }
-        #statusBtn { font-size: 24px; font-weight: bold; color: gray; }
-        .pressionado { color: red !important; }
+        body { font-family: Arial, sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
+        .box { background: #1e1e1e; border-radius: 15px; padding: 20px; margin-bottom: 20px; border: 1px solid #333; }
+        button { background: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 25px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        #statusBtn { font-size: 24px; font-weight: bold; color: #555; }
+        .pressionado { color: #00ff00 !important; }
+        #audioVisualizer { width: 100%; height: 60px; background: #000; border-radius: 10px; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <h1>Validador de Produto</h1>
-    <button onclick="conectar()">1. Conectar via Bluetooth</button>
+    <h1>Validador de Produto (GPS + Áudio)</h1>
+    <button onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
 
     <div class="box">
-        <h3>Localização GPS (ATGM)</h3>
+        <h3>📍 Localização GPS</h3>
         <p id="txtGPS">Aguardando dados...</p>
     </div>
 
     <div class="box">
-        <h3>Status do Botão</h3>
+        <h3>🔘 Status do Botão</h3>
         <div id="statusBtn">SOLTO</div>
     </div>
 
+    <div class="box">
+        <h3>🎤 Áudio em Tempo Real</h3>
+        <p style="font-size: 12px; color: #888;">(O som sairá no alto-falante do celular)</p>
+        <div id="audioStatus">Status: Offline</div>
+    </div>
+
     <script>
-        // Esses IDs precisam ser IGUAIS aos que vamos colocar no ESP32
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
         const GPS_UUID     = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
         const BOTAO_UUID   = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-        const AUDIO_UUID = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
-let audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+        const AUDIO_UUID   = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
+
+        let audioCtx;
 
         async function conectar() {
             try {
-                // Procura o ESP32
+                // Inicia o contexto de áudio (obrigatório clicar em algo antes)
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'ESP32' }],
                     optionalServices: [SERVICE_UUID]
@@ -46,15 +55,14 @@ let audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRa
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
 
-                // Configura o GPS
+                // GPS
                 const gpsChar = await service.getCharacteristic(GPS_UUID);
                 gpsChar.startNotifications();
                 gpsChar.addEventListener('characteristicvaluechanged', e => {
-                    let dado = new TextDecoder().decode(e.target.value);
-                    document.getElementById('txtGPS').innerText = dado;
+                    document.getElementById('txtGPS').innerText = new TextDecoder().decode(e.target.value);
                 });
 
-                // Configura o Botão
+                // BOTÃO
                 const botChar = await service.getCharacteristic(BOTAO_UUID);
                 botChar.startNotifications();
                 botChar.addEventListener('characteristicvaluechanged', e => {
@@ -63,32 +71,34 @@ let audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRa
                     el.innerText = valor === 1 ? "PRESSIONADO" : "SOLTO";
                     el.className = valor === 1 ? "pressionado" : "";
                 });
-                // Configura o Áudio
-const audioChar = await service.getCharacteristic(AUDIO_UUID);
-audioChar.startNotifications();
 
-audioChar.addEventListener('characteristicvaluechanged', e => {
-    let data = new Uint8Array(e.target.value.buffer);
-    tocarAudio(data);
-});
+                // ÁUDIO
+                const audioChar = await service.getCharacteristic(AUDIO_UUID);
+                await audioChar.startNotifications();
+                document.getElementById('audioStatus').innerText = "Status: RECEBENDO ÁUDIO 🔊";
+                
+                audioChar.addEventListener('characteristicvaluechanged', e => {
+                    let rawData = new Uint8Array(e.target.value.buffer);
+                    tocarAudio(rawData);
+                });
 
-function tocarAudio(data) {
-    let buffer = audioCtx.createBuffer(1, data.length, 16000);
-    let channelData = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-        // Converte de volta de 8-bit para sinal de áudio (-1.0 a 1.0)
-        channelData[i] = (data[i] - 128) / 128.0;
-    }
-    let source = audioCtx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioCtx.destination);
-    source.start();
-}
-
-                alert("Conectado com sucesso!");
+                alert("Tudo Conectado!");
             } catch (err) {
-                alert("Erro ao conectar: " + err);
+                alert("Erro: " + err);
             }
+        }
+
+        function tocarAudio(data) {
+            if (!audioCtx) return;
+            let buffer = audioCtx.createBuffer(1, data.length, 16000);
+            let channelData = buffer.getChannelData(0);
+            for (let i = 0; i < data.length; i++) {
+                channelData[i] = (data[i] - 128) / 128.0; // Converte 8-bit para Float
+            }
+            let source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+            source.start();
         }
     </script>
 </body>
