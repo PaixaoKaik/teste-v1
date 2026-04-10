@@ -46,7 +46,7 @@
 
         async function conectar() {
             try {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
 
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'ESP32' }],
