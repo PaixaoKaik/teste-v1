@@ -62,36 +62,47 @@
         }
 
         function tocar(data) {
-            if (!audioCtx) return;
-            const buffer = audioCtx.createBuffer(1, data.length, 11025);
-            const channel = buffer.getChannelData(0);
-            let p = 0;
+    if (!audioCtx) return;
+    const samples = data.length;
+    const buffer = audioCtx.createBuffer(1, samples, 11025);
+    const channel = buffer.getChannelData(0);
+    let energia = 0;
 
-            // Filtro de Média Móvel para limpar o chiado
-            for (let i = 0; i < data.length; i++) {
-                // Suavização simples entre o sample atual e o anterior
-                let raw = (data[i] - 128) / 128;
-                
-                // Aplicando Ganho de Saída
-                channel[i] = raw * 2.5; 
-                
-                p += Math.abs(channel[i]);
-            }
+    for (let i = 0; i < samples; i++) {
+        let v = (data[i] - 128) / 128;
+        
+        // Suavização nas bordas do buffer (Fade-in/out) para evitar estalos
+        if (i < 10) v *= (i / 10); 
+        if (i > samples - 10) v *= ((samples - i) / 10);
 
-            // Barra de volume baseada na força real do sinal
-            document.getElementById('bar').style.width = Math.min((p/data.length)*250, 100) + "%";
+        channel[i] = v * 3.0; // Ganho moderado
+        energia += Math.abs(v);
+    }
 
-            // Se o som for muito baixo (silêncio), nem toca para evitar o "fuzz"
-            if ((p/data.length) < 0.05) return; 
+    const volumeMedio = energia / samples;
+    document.getElementById('bar').style.width = Math.min(volumeMedio * 400, 100) + "%";
 
-            const source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioCtx.destination);
-            const agora = audioCtx.currentTime;
-            if (proximoTempo < agora) proximoTempo = agora + 0.02;
-            source.start(proximoTempo);
-            proximoTempo += buffer.duration;
-        }
+    // Gate mais "inteligente"
+    if (volumeMedio < 0.04) return; 
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    
+    // Adiciona um pequeno filtro passa-baixa no próprio navegador para abafar o chiado agudo
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = 4000; // Corta ruídos muito agudos (chiado metálico)
+    
+    source.connect(filter);
+    filter.connect(audioCtx.destination);
+
+    const agora = audioCtx.currentTime;
+    // Aumentamos o "look-ahead" para 0.06 para dar fôlego ao Bluetooth
+    if (proximoTempo < agora) proximoTempo = agora + 0.06;
+    
+    source.start(proximoTempo);
+    proximoTempo += buffer.duration;
+}
     </script>
 </body>
 </html>
