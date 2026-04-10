@@ -7,18 +7,17 @@
     <style>
         body { font-family: sans-serif; background: #121212; color: white; text-align: center; }
         .box { background: #1e1e1e; padding: 20px; margin: 10px; border-radius: 10px; border: 1px solid #444; }
-        #bar { height: 15px; width: 0%; background: #00ff00; border-radius: 5px; transition: width 0.1s; }
+        #bar { height: 15px; width: 0%; background: #00ff00; border-radius: 5px; transition: width 0.05s; }
         button { padding: 20px; font-weight: bold; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 10px; }
-        .active { background: #28a745 !important; }
     </style>
 </head>
 <body>
     <h1>Validador ESP32-C3</h1>
-    <button id="btnConn" onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
+    <button onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
 
-    <div class="box">GPS: <span id="gps">Aguardando sinal...</span></div>
-    <div class="box">Botão: <b id="btn">SOLTO</b></div>
-    <div class="box">Áudio (Nível):<div style="background:#000; width:100%; margin-top:10px;"><div id="bar"></div></div></div>
+    <div class="box">GPS: <span id="gps">---</span></div>
+    <div class="box">Botão: <span id="btn">SOLTO</span></div>
+    <div class="box">Áudio:<div style="background:#000; width:100%;"><div id="bar"></div></div></div>
 
     <script>
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -29,74 +28,62 @@
         };
 
         let audioCtx, proximoTempo = 0;
+        let lastSample = 0; // Para o filtro passa-alta
 
         async function conectar() {
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 11025 });
-                
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'ESP32' }],
                     optionalServices: [SERVICE_UUID]
                 });
-
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
 
-                // GPS
                 const gpsChar = await service.getCharacteristic(UUIDS.gps);
                 await gpsChar.startNotifications();
                 gpsChar.addEventListener('characteristicvaluechanged', e => {
                     document.getElementById('gps').innerText = new TextDecoder().decode(e.target.value);
                 });
 
-                // Botão
                 const btnChar = await service.getCharacteristic(UUIDS.btn);
                 await btnChar.startNotifications();
                 btnChar.addEventListener('characteristicvaluechanged', e => {
-                    // Obtém o valor do primeiro byte
-                    const valor = e.target.value.getUint8(0);
-                    const el = document.getElementById('btn');
-                    el.innerText = valor === 1 ? "PRESSIONADO" : "SOLTO";
-                    el.style.color = valor === 1 ? "#00ff00" : "#ff4444";
+                    document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO";
                 });
 
-                // Áudio
                 const audChar = await service.getCharacteristic(UUIDS.aud);
                 await audChar.startNotifications();
                 audChar.addEventListener('characteristicvaluechanged', e => {
                     tocar(new Uint8Array(e.target.value.buffer));
                 });
-
-                document.getElementById('btnConn').innerText = "CONECTADO";
-                document.getElementById('btnConn').classList.add('active');
-                
-            } catch (err) {
-                console.error(err);
-                alert("Erro: " + err.message);
-            }
+                alert("Conectado!");
+            } catch (err) { alert("Erro: " + err.message); }
         }
 
         function tocar(data) {
             if (!audioCtx) return;
             const buffer = audioCtx.createBuffer(1, data.length, 11025);
             const channel = buffer.getChannelData(0);
-            let volumeTotal = 0;
+            let p = 0;
 
             for (let i = 0; i < data.length; i++) {
-                // Converte de 0-255 para -1.0 a 1.0
-                const sample = ((data[i] - 128) / 128) * 4.0; // Ganho de 4x
-                channel[i] = sample;
-                volumeTotal += Math.abs(sample);
+                // 1. Converte para Float
+                let val = ((data[i] - 128) / 128);
+                
+                // 2. Filtro Passa-Alta simples para remover DC Offset (Chiado constante)
+                let filtered = val - lastSample;
+                lastSample = val;
+                
+                // 3. Ganho final
+                channel[i] = filtered * 5.0; 
+                p += Math.abs(channel[i]);
             }
 
-            // Atualiza barra de volume
-            const media = volumeTotal / data.length;
-            document.getElementById('bar').style.width = Math.min(media * 150, 100) + "%";
-
+            document.getElementById('bar').style.width = Math.min((p/data.length)*300, 100) + "%";
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
-            
             const agora = audioCtx.currentTime;
             if (proximoTempo < agora) proximoTempo = agora + 0.05;
             source.start(proximoTempo);
