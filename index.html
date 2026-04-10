@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Estável</title>
+    <title>Painel Validador</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; }
-        .box { background: #1e1e1e; padding: 20px; margin: 10px; border-radius: 10px; border: 1px solid #444; }
+        body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; }
+        .box { background: #1e1e1e; padding: 20px; margin: 10px; border-radius: 10px; border: 1px solid #333; }
+        #bar { height: 15px; width: 0%; background: #00ff00; border-radius: 5px; }
         button { padding: 20px; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; }
-        #bar { height: 15px; width: 0%; background: #00ff00; border-radius: 5px; transition: width 0.1s; }
     </style>
 </head>
 <body>
-    <h1>Painel de Controle</h1>
-    <button onclick="conectar()">CONECTAR</button>
-    <div class="box">GPS: <span id="gps">---</span></div>
-    <div class="box">Botão: <span id="btn">SOLTO</span></div>
-    <div class="box">Som:<div style="background:#000;width:100%;"><div id="bar"></div></div></div>
+    <h1>Painel ESP32-C3</h1>
+    <button onclick="conectar()">CONECTAR TUDO</button>
+    <div class="box">GPS: <span id="gps">Aguardando...</span></div>
+    <div class="box">Botão: <span id="btn">---</span></div>
+    <div class="box">Monitor Áudio:<div style="background:#000;width:100%;"><div id="bar"></div></div></div>
 
     <script>
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -25,42 +25,52 @@
 
         async function conectar() {
             try {
+                // Força o início do contexto de áudio
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 11025 });
-                const device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'ESP32' }], optionalServices: [SERVICE_UUID] });
+                if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+                const device = await navigator.bluetooth.requestDevice({ 
+                    filters: [{ namePrefix: 'ESP32' }], 
+                    optionalServices: [SERVICE_UUID] 
+                });
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
 
-                const gpsChar = await service.getCharacteristic(UUIDS.gps);
-                await gpsChar.startNotifications();
-                gpsChar.addEventListener('characteristicvaluechanged', e => { document.getElementById('gps').innerText = new TextDecoder().decode(e.target.value); });
+                // Ativar Botão
+                const bChar = await service.getCharacteristic(UUIDS.btn);
+                await bChar.startNotifications();
+                bChar.addEventListener('characteristicvaluechanged', e => {
+                    document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO";
+                });
 
-                const btnChar = await service.getCharacteristic(UUIDS.btn);
-                await btnChar.startNotifications();
-                btnChar.addEventListener('characteristicvaluechanged', e => { document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO"; });
+                // Ativar Áudio
+                const aChar = await service.getCharacteristic(UUIDS.aud);
+                await aChar.startNotifications();
+                aChar.addEventListener('characteristicvaluechanged', e => {
+                    tocar(new Uint8Array(e.target.value.buffer));
+                });
 
-                const audChar = await service.getCharacteristic(UUIDS.aud);
-                await audChar.startNotifications();
-                audChar.addEventListener('characteristicvaluechanged', e => { tocar(new Uint8Array(e.target.value.buffer)); });
-
-                alert("Conectado!");
-            } catch (err) { alert("Erro: " + err); }
+                alert("Sistema Online!");
+            } catch (v) { alert("Erro: " + v); }
         }
 
         function tocar(data) {
             if (!audioCtx) return;
             const buffer = audioCtx.createBuffer(1, data.length, 11025);
             const channel = buffer.getChannelData(0);
-            let p = 0;
+            let pico = 0;
             for (let i = 0; i < data.length; i++) {
-                channel[i] = ((data[i] - 128) / 128) * 8.0; 
-                p += Math.abs(channel[i]);
+                channel[i] = ((data[i] - 128) / 128) * 6.0;
+                pico += Math.abs(channel[i]);
             }
-            document.getElementById('bar').style.width = Math.min((p/data.length)*200, 100) + "%";
+            document.getElementById('bar').style.width = Math.min((pico/data.length)*300, 100) + "%";
+
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
+            
             const agora = audioCtx.currentTime;
-            if (proximoTempo < agora) proximoTempo = agora + 0.1;
+            if (proximoTempo < agora) proximoTempo = agora + 0.05;
             source.start(proximoTempo);
             proximoTempo += buffer.duration;
         }
