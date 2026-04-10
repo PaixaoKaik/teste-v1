@@ -28,7 +28,7 @@
         };
 
         let audioCtx, proximoTempo = 0;
-        let lastSample = 0; // Para o filtro passa-alta
+        let bias = 128; // Auto-ajuste de silêncio
 
         async function conectar() {
             try {
@@ -55,35 +55,41 @@
                 const audChar = await service.getCharacteristic(UUIDS.aud);
                 await audChar.startNotifications();
                 audChar.addEventListener('characteristicvaluechanged', e => {
-                    tocar(new Uint8Array(e.target.value.buffer));
+                    processarAudio(new Uint8Array(e.target.value.buffer));
                 });
                 alert("Conectado!");
             } catch (err) { alert("Erro: " + err.message); }
         }
 
-        function tocar(data) {
+        function processarAudio(data) {
             if (!audioCtx) return;
             const buffer = audioCtx.createBuffer(1, data.length, 11025);
             const channel = buffer.getChannelData(0);
-            let p = 0;
+            
+            // 1. Calcular volume do pacote para o Gate
+            let somaAbs = 0;
+            for(let v of data) somaAbs += Math.abs(v - 128);
+            let volumeMedio = somaAbs / data.length;
 
-            for (let i = 0; i < data.length; i++) {
-                // 1. Converte para Float
-                let val = ((data[i] - 128) / 128);
-                
-                // 2. Filtro Passa-Alta simples para remover DC Offset (Chiado constante)
-                let filtered = val - lastSample;
-                lastSample = val;
-                
-                // 3. Ganho final
-                channel[i] = filtered * 5.0; 
-                p += Math.abs(channel[i]);
+            // 2. Aplicar Gate: Se o volume for muito baixo (só chiado), silencia totalmente
+            const threshold = 4.0; // AJUSTE AQUI: Se o chiado continuar, aumente para 6.0 ou 8.0
+            
+            if (volumeMedio < threshold) {
+                document.getElementById('bar').style.width = "0%";
+                return; // Nem agenda o áudio se for apenas ruído
             }
 
-            document.getElementById('bar').style.width = Math.min((p/data.length)*300, 100) + "%";
+            for (let i = 0; i < data.length; i++) {
+                // Converte e amplifica a voz
+                channel[i] = ((data[i] - 128) / 128) * 6.0;
+            }
+
+            document.getElementById('bar').style.width = Math.min(volumeMedio * 10, 100) + "%";
+            
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
+            
             const agora = audioCtx.currentTime;
             if (proximoTempo < agora) proximoTempo = agora + 0.05;
             source.start(proximoTempo);
