@@ -3,20 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Validador Pro</title>
+    <title>Dashboard GPS-Audio</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; }
-        .box { background: #1e1e1e; padding: 15px; margin: 10px; border-radius: 10px; border: 1px solid #333; }
-        #bar { height: 10px; width: 0%; background: #00ff00; border-radius: 5px; }
-        button { padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        .box { background: #1e1e1e; padding: 15px; margin: 10px; border-radius: 10px; border: 1px solid #444; }
+        #bar { height: 20px; width: 0%; background: #00ff00; border-radius: 10px; transition: width 0.1s; }
+        button { padding: 20px; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 1.2em; }
     </style>
 </head>
 <body>
-    <h2>Dashboard ESP32-C3</h2>
-    <button onclick="conectar()">INICIAR CONEXÃO</button>
-    <div class="box">GPS: <span id="gps">Aguardando Fix...</span></div>
-    <div class="box">Botão: <span id="btn">---</span></div>
-    <div class="box">Nível de Áudio: <div style="background:#000; width:100%;"><div id="bar"></div></div></div>
+    <h1>Controle ESP32-C3</h1>
+    <button onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
+
+    <div class="box">📍 GPS (Atualiza a cada 2 min): <br><span id="gps" style="font-size: 1.5em; color: #00ff00;">---</span></div>
+    <div class="box">🔘 Botão: <span id="btn" style="font-size: 1.5em;">SOLTO</span></div>
+    <div class="box">🔊 Volume de Áudio:<div style="background:#000; width:100%; border-radius:10px; margin-top: 10px;"><div id="bar"></div></div></div>
 
     <script>
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -26,35 +27,27 @@
         async function conectar() {
             try {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 11025 });
-                const device = await navigator.bluetooth.requestDevice({ 
-                    filters: [{ namePrefix: 'ESP32' }], optionalServices: [SERVICE_UUID] 
-                });
+                const device = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'ESP32' }], optionalServices: [SERVICE_UUID] });
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
 
                 // GPS
                 const gChar = await service.getCharacteristic(UUIDS.gps);
                 await gChar.startNotifications();
-                gChar.addEventListener('characteristicvaluechanged', e => {
-                    document.getElementById('gps').innerText = new TextDecoder().decode(e.target.value);
-                });
+                gChar.addEventListener('characteristicvaluechanged', e => { document.getElementById('gps').innerText = new TextDecoder().decode(e.target.value); });
 
                 // BOTÃO
                 const bChar = await service.getCharacteristic(UUIDS.btn);
                 await bChar.startNotifications();
-                bChar.addEventListener('characteristicvaluechanged', e => {
-                    document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO";
-                });
+                bChar.addEventListener('characteristicvaluechanged', e => { document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO"; });
 
                 // ÁUDIO
                 const aChar = await service.getCharacteristic(UUIDS.aud);
                 await aChar.startNotifications();
-                aChar.addEventListener('characteristicvaluechanged', e => {
-                    tocar(new Uint8Array(e.target.value.buffer));
-                });
+                aChar.addEventListener('characteristicvaluechanged', e => { tocar(new Uint8Array(e.target.value.buffer)); });
 
-                console.log("Conectado!");
-            } catch (v) { console.error(v); alert("Falha: " + v); }
+                alert("Conectado! Áudio Prioritário.");
+            } catch (v) { alert("Erro: " + v); }
         }
 
         function tocar(data) {
@@ -63,7 +56,7 @@
             const channel = buffer.getChannelData(0);
             let pico = 0;
             for (let i = 0; i < data.length; i++) {
-                channel[i] = ((data[i] - 128) / 128) * 5.0;
+                channel[i] = ((data[i] - 128) / 128) * 12.0; // Multiplicador alto para ouvir tudo
                 pico += Math.abs(channel[i]);
             }
             document.getElementById('bar').style.width = Math.min((pico/data.length)*400, 100) + "%";
