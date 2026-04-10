@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel ESP32-C3 - Estabilizado</title>
+    <title>Painel ESP32-C3 - Validador Final</title>
     <style>
         body { font-family: Arial, sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
         .box { background: #1e1e1e; border-radius: 15px; padding: 20px; margin-bottom: 20px; border: 1px solid #333; }
@@ -42,7 +42,7 @@
         const AUDIO_UUID   = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
 
         let audioCtx;
-        let proximoTempoAudio = 0; // Controla a fila de áudio para não picotar
+        let proximoTempoAudio = 0; 
 
         async function conectar() {
             try {
@@ -73,7 +73,7 @@
                     el.className = valor === 1 ? "pressionado" : "";
                 });
 
-                // ÁUDIO COM BUFFER DE SUAVIZAÇÃO
+                // ÁUDIO
                 const audioChar = await service.getCharacteristic(AUDIO_UUID);
                 await audioChar.startNotifications();
                 document.getElementById('audioStatus').innerText = "Status: RECEBENDO ÁUDIO 🔊";
@@ -92,27 +92,31 @@
         function processarSom(data) {
             if (!audioCtx) return;
 
-            // Cria o pedaço de áudio
+            // ANTI-ECO: Se o áudio estiver mais de 300ms atrasado, pula para o tempo real
+            if (proximoTempoAudio > audioCtx.currentTime + 0.3) {
+                proximoTempoAudio = audioCtx.currentTime;
+            }
+
             let buffer = audioCtx.createBuffer(1, data.length, 16000);
             let channelData = buffer.getChannelData(0);
             let somaPico = 0;
 
             for (let i = 0; i < data.length; i++) {
-                let s = (data[i] - 128) / 128.0;
+                // Multiplicador de 5.0 para compensar o filtro digital do ESP
+                let s = ((data[i] - 128) / 128.0) * 5.0;
                 channelData[i] = s;
-                somaPico += Math.abs(s); // Para o visualizador
+                somaPico += Math.abs(s); 
             }
 
-            // Atualiza barra visual (feedback se o microfone está captando algo)
+            // Barra visual
             let volume = (somaPico / data.length) * 500;
             document.getElementById('bar').style.width = Math.min(volume, 100) + "%";
 
-            // AGENDAMENTO (O segredo para parar de chiar/picotar)
             let source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
 
-            // Se a fila de áudio estiver atrasada, recomeça do tempo atual + margem
+            // Sincronismo da fila de pacotes
             if (proximoTempoAudio < audioCtx.currentTime) {
                 proximoTempoAudio = audioCtx.currentTime + 0.05; 
             }
