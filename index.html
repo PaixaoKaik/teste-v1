@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel Final ESP32-C3</title>
+    <title>Painel ESP32-C3 Ultra</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: white; text-align: center; }
         .box { background: #1e1e1e; padding: 20px; margin: 10px; border-radius: 10px; border: 1px solid #444; }
@@ -12,12 +12,12 @@
     </style>
 </head>
 <body>
-    <h1>Validador ESP32-C3</h1>
+    <h1>Painel ESP32-C3</h1>
     <button onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
 
     <div class="box">GPS: <span id="gps">---</span></div>
     <div class="box">Botão: <span id="btn">SOLTO</span></div>
-    <div class="box">Áudio:<div style="background:#000; width:100%;"><div id="bar"></div></div></div>
+    <div class="box">Voz:<div style="background:#000; width:100%; margin-top:10px;"><div id="bar"></div></div></div>
 
     <script>
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -28,7 +28,6 @@
         };
 
         let audioCtx, proximoTempo = 0;
-        let bias = 128; // Auto-ajuste de silêncio
 
         async function conectar() {
             try {
@@ -40,58 +39,56 @@
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
 
-                const gpsChar = await service.getCharacteristic(UUIDS.gps);
-                await gpsChar.startNotifications();
-                gpsChar.addEventListener('characteristicvaluechanged', e => {
-                    document.getElementById('gps').innerText = new TextDecoder().decode(e.target.value);
-                });
-
                 const btnChar = await service.getCharacteristic(UUIDS.btn);
                 await btnChar.startNotifications();
-                btnChar.addEventListener('characteristicvaluechanged', e => {
+                btnChar.oncharacteristicvaluechanged = e => {
                     document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO";
-                });
+                };
 
                 const audChar = await service.getCharacteristic(UUIDS.aud);
                 await audChar.startNotifications();
-                audChar.addEventListener('characteristicvaluechanged', e => {
-                    processarAudio(new Uint8Array(e.target.value.buffer));
-                });
-                alert("Conectado!");
-            } catch (err) { alert("Erro: " + err.message); }
+                audChar.oncharacteristicvaluechanged = e => {
+                    tocar(new Uint8Array(e.target.value.buffer));
+                };
+
+                const gpsChar = await service.getCharacteristic(UUIDS.gps);
+                await gpsChar.startNotifications();
+                gpsChar.oncharacteristicvaluechanged = e => {
+                    document.getElementById('gps').innerText = new TextDecoder().decode(e.target.value);
+                };
+
+                alert("Conectado com Sucesso!");
+            } catch (err) { alert(err); }
         }
 
-        function processarAudio(data) {
+        function tocar(data) {
             if (!audioCtx) return;
             const buffer = audioCtx.createBuffer(1, data.length, 11025);
             const channel = buffer.getChannelData(0);
-            
-            // 1. Calcular volume do pacote para o Gate
-            let somaAbs = 0;
-            for(let v of data) somaAbs += Math.abs(v - 128);
-            let volumeMedio = somaAbs / data.length;
+            let p = 0;
 
-            // 2. Aplicar Gate: Se o volume for muito baixo (só chiado), silencia totalmente
-            const threshold = 4.0; // AJUSTE AQUI: Se o chiado continuar, aumente para 6.0 ou 8.0
-            
-            if (volumeMedio < threshold) {
-                document.getElementById('bar').style.width = "0%";
-                return; // Nem agenda o áudio se for apenas ruído
-            }
-
+            // Filtro de Média Móvel para limpar o chiado
             for (let i = 0; i < data.length; i++) {
-                // Converte e amplifica a voz
-                channel[i] = ((data[i] - 128) / 128) * 6.0;
+                // Suavização simples entre o sample atual e o anterior
+                let raw = (data[i] - 128) / 128;
+                
+                // Aplicando Ganho de Saída
+                channel[i] = raw * 2.5; 
+                
+                p += Math.abs(channel[i]);
             }
 
-            document.getElementById('bar').style.width = Math.min(volumeMedio * 10, 100) + "%";
-            
+            // Barra de volume baseada na força real do sinal
+            document.getElementById('bar').style.width = Math.min((p/data.length)*250, 100) + "%";
+
+            // Se o som for muito baixo (silêncio), nem toca para evitar o "fuzz"
+            if ((p/data.length) < 0.05) return; 
+
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
-            
             const agora = audioCtx.currentTime;
-            if (proximoTempo < agora) proximoTempo = agora + 0.05;
+            if (proximoTempo < agora) proximoTempo = agora + 0.02;
             source.start(proximoTempo);
             proximoTempo += buffer.duration;
         }
