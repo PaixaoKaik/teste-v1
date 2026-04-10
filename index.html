@@ -31,7 +31,7 @@
 
         async function conectar() {
             try {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 11025 });
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 12000 });
                 
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'ESP32' }],
@@ -71,11 +71,11 @@
 
         function tocar(data) {
             if (!audioCtx) return;
-            const buffer = audioCtx.createBuffer(1, data.length, 11025);
+            const buffer = audioCtx.createBuffer(1, data.length, 12000);
             const channel = buffer.getChannelData(0);
             let p = 0;
             for (let i = 0; i < data.length; i++) {
-                channel[i] = ((data[i] - 128) / 128) * 8.0;
+                channel[i] = ((data[i] - 128) / 128) * 10.0;
                 p += Math.abs(channel[i]);
             }
             document.getElementById('bar').style.width = Math.min((p/data.length)*200, 100) + "%";
