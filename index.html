@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel ESP32-C3 - Validador Final</title>
+    <title>Painel ESP32-C3 - 8kHz</title>
     <style>
         body { font-family: Arial, sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
         .box { background: #1e1e1e; border-radius: 15px; padding: 20px; margin-bottom: 20px; border: 1px solid #333; }
@@ -16,7 +16,7 @@
 </head>
 <body>
 
-    <h1>Validador de Produto</h1>
+    <h1>Validador de Produto (8kHz)</h1>
     <button onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
 
     <div class="box">
@@ -30,7 +30,7 @@
     </div>
 
     <div class="box">
-        <h3>🎤 Áudio (Monitor de Voz)</h3>
+        <h3>🎤 Áudio (Monitoramento Realtime)</h3>
         <div id="audioStatus" style="color: #888;">Status: Offline</div>
         <div id="visualizer"><div id="bar"></div></div>
     </div>
@@ -46,6 +46,7 @@
 
         async function conectar() {
             try {
+                // IMPORTANTE: Definido para 8000 para bater com o ESP
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
 
                 const device = await navigator.bluetooth.requestDevice({
@@ -56,14 +57,12 @@
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
 
-                // GPS
                 const gpsChar = await service.getCharacteristic(GPS_UUID);
                 gpsChar.startNotifications();
                 gpsChar.addEventListener('characteristicvaluechanged', e => {
                     document.getElementById('txtGPS').innerText = new TextDecoder().decode(e.target.value);
                 });
 
-                // BOTÃO
                 const botChar = await service.getCharacteristic(BOTAO_UUID);
                 botChar.startNotifications();
                 botChar.addEventListener('characteristicvaluechanged', e => {
@@ -73,7 +72,6 @@
                     el.className = valor === 1 ? "pressionado" : "";
                 });
 
-                // ÁUDIO
                 const audioChar = await service.getCharacteristic(AUDIO_UUID);
                 await audioChar.startNotifications();
                 document.getElementById('audioStatus').innerText = "Status: RECEBENDO ÁUDIO 🔊";
@@ -83,42 +81,43 @@
                     processarSom(rawData);
                 });
 
-                alert("Conectado!");
+                alert("Conectado com sucesso em 8kHz!");
             } catch (err) {
                 alert("Erro: " + err);
             }
         }
 
         function processarSom(data) {
-    if (!audioCtx) return;
+            if (!audioCtx) return;
 
-    // Se o atraso for maior que 150ms (muito pouco!), limpa a fila.
-    // Isso garante que você ouça SEMPRE o tempo real, custe o que custar.
-    const atrasoMaximo = 0.15; 
-    if (proximoTempoAudio > audioCtx.currentTime + atrasoMaximo) {
-        proximoTempoAudio = audioCtx.currentTime;
-    }
+            // ANTI-ECO: Se atrasar mais que 100ms, reseta para o tempo atual
+            if (proximoTempoAudio > audioCtx.currentTime + 0.1) {
+                proximoTempoAudio = audioCtx.currentTime;
+            }
 
-    let buffer = audioCtx.createBuffer(1, data.length, 16000);
-    let channelData = buffer.getChannelData(0);
-    
-    for (let i = 0; i < data.length; i++) {
-        // Diminuí o multiplicador para 3.5 para não amplificar o apito
-        channelData[i] = ((data[i] - 128) / 128.0) * 3.5;
-    }
+            let buffer = audioCtx.createBuffer(1, data.length, 8000);
+            let channelData = buffer.getChannelData(0);
+            let somaPico = 0;
 
-    let source = audioCtx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioCtx.destination);
+            for (let i = 0; i < data.length; i++) {
+                let s = ((data[i] - 128) / 128.0) * 4.5;
+                channelData[i] = s;
+                somaPico += Math.abs(s); 
+            }
 
-    // Se a fila "morreu", recomeça agora
-    if (proximoTempoAudio < audioCtx.currentTime) {
-        proximoTempoAudio = audioCtx.currentTime;
-    }
+            document.getElementById('bar').style.width = Math.min((somaPico / data.length) * 500, 100) + "%";
 
-    source.start(proximoTempoAudio);
-    proximoTempoAudio += buffer.duration;
-}
+            let source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+
+            if (proximoTempoAudio < audioCtx.currentTime) {
+                proximoTempoAudio = audioCtx.currentTime + 0.01; 
+            }
+
+            source.start(proximoTempoAudio);
+            proximoTempoAudio += buffer.duration;
+        }
     </script>
 </body>
 </html>
