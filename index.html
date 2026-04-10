@@ -7,17 +7,18 @@
     <style>
         body { font-family: sans-serif; background: #121212; color: white; text-align: center; }
         .box { background: #1e1e1e; padding: 20px; margin: 10px; border-radius: 10px; border: 1px solid #444; }
-        #bar { height: 15px; width: 0%; background: #00ff00; border-radius: 5px; transition: width 0.05s; }
+        #bar { height: 15px; width: 0%; background: #00ff00; border-radius: 5px; transition: width 0.1s; }
         button { padding: 20px; font-weight: bold; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 10px; }
+        .active { background: #28a745 !important; }
     </style>
 </head>
 <body>
     <h1>Validador ESP32-C3</h1>
-    <button onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
+    <button id="btnConn" onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
 
-    <div class="box">GPS: <span id="gps">---</span></div>
-    <div class="box">Botão: <span id="btn">SOLTO</span></div>
-    <div class="box">Áudio:<div style="background:#000; width:100%;"><div id="bar"></div></div></div>
+    <div class="box">GPS: <span id="gps">Aguardando sinal...</span></div>
+    <div class="box">Botão: <b id="btn">SOLTO</b></div>
+    <div class="box">Áudio (Nível):<div style="background:#000; width:100%; margin-top:10px;"><div id="bar"></div></div></div>
 
     <script>
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -52,7 +53,11 @@
                 const btnChar = await service.getCharacteristic(UUIDS.btn);
                 await btnChar.startNotifications();
                 btnChar.addEventListener('characteristicvaluechanged', e => {
-                    document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO";
+                    // Obtém o valor do primeiro byte
+                    const valor = e.target.value.getUint8(0);
+                    const el = document.getElementById('btn');
+                    el.innerText = valor === 1 ? "PRESSIONADO" : "SOLTO";
+                    el.style.color = valor === 1 ? "#00ff00" : "#ff4444";
                 });
 
                 // Áudio
@@ -62,10 +67,12 @@
                     tocar(new Uint8Array(e.target.value.buffer));
                 });
 
-                alert("Conectado!");
+                document.getElementById('btnConn').innerText = "CONECTADO";
+                document.getElementById('btnConn').classList.add('active');
+                
             } catch (err) {
-                console.log(err);
-                alert("Erro GATT: " + err.message + "\nCertifique-se de que o Bluetooth do Celular está ligado.");
+                console.error(err);
+                alert("Erro: " + err.message);
             }
         }
 
@@ -73,18 +80,25 @@
             if (!audioCtx) return;
             const buffer = audioCtx.createBuffer(1, data.length, 11025);
             const channel = buffer.getChannelData(0);
-            let p = 0;
+            let volumeTotal = 0;
+
             for (let i = 0; i < data.length; i++) {
-                channel[i] = ((data[i] - 128) / 128) * 8.0;
-                p += Math.abs(channel[i]);
+                // Converte de 0-255 para -1.0 a 1.0
+                const sample = ((data[i] - 128) / 128) * 4.0; // Ganho de 4x
+                channel[i] = sample;
+                volumeTotal += Math.abs(sample);
             }
-            document.getElementById('bar').style.width = Math.min((p/data.length)*200, 100) + "%";
+
+            // Atualiza barra de volume
+            const media = volumeTotal / data.length;
+            document.getElementById('bar').style.width = Math.min(media * 150, 100) + "%";
 
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
+            
             const agora = audioCtx.currentTime;
-            if (proximoTempo < agora) proximoTempo = agora + 0.15;
+            if (proximoTempo < agora) proximoTempo = agora + 0.05;
             source.start(proximoTempo);
             proximoTempo += buffer.duration;
         }
