@@ -90,40 +90,35 @@
         }
 
         function processarSom(data) {
-            if (!audioCtx) return;
+    if (!audioCtx) return;
 
-            // ANTI-ECO: Se o áudio estiver mais de 300ms atrasado, pula para o tempo real
-            if (proximoTempoAudio > audioCtx.currentTime + 0.3) {
-                proximoTempoAudio = audioCtx.currentTime;
-            }
+    // Se o atraso for maior que 150ms (muito pouco!), limpa a fila.
+    // Isso garante que você ouça SEMPRE o tempo real, custe o que custar.
+    const atrasoMaximo = 0.15; 
+    if (proximoTempoAudio > audioCtx.currentTime + atrasoMaximo) {
+        proximoTempoAudio = audioCtx.currentTime;
+    }
 
-            let buffer = audioCtx.createBuffer(1, data.length, 16000);
-            let channelData = buffer.getChannelData(0);
-            let somaPico = 0;
+    let buffer = audioCtx.createBuffer(1, data.length, 16000);
+    let channelData = buffer.getChannelData(0);
+    
+    for (let i = 0; i < data.length; i++) {
+        // Diminuí o multiplicador para 3.5 para não amplificar o apito
+        channelData[i] = ((data[i] - 128) / 128.0) * 3.5;
+    }
 
-            for (let i = 0; i < data.length; i++) {
-                // Multiplicador de 5.0 para compensar o filtro digital do ESP
-                let s = ((data[i] - 128) / 128.0) * 5.0;
-                channelData[i] = s;
-                somaPico += Math.abs(s); 
-            }
+    let source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioCtx.destination);
 
-            // Barra visual
-            let volume = (somaPico / data.length) * 500;
-            document.getElementById('bar').style.width = Math.min(volume, 100) + "%";
+    // Se a fila "morreu", recomeça agora
+    if (proximoTempoAudio < audioCtx.currentTime) {
+        proximoTempoAudio = audioCtx.currentTime;
+    }
 
-            let source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioCtx.destination);
-
-            // Sincronismo da fila de pacotes
-            if (proximoTempoAudio < audioCtx.currentTime) {
-                proximoTempoAudio = audioCtx.currentTime + 0.05; 
-            }
-
-            source.start(proximoTempoAudio);
-            proximoTempoAudio += buffer.duration;
-        }
+    source.start(proximoTempoAudio);
+    proximoTempoAudio += buffer.duration;
+}
     </script>
 </body>
 </html>
