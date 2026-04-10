@@ -3,20 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel Validador</title>
+    <title>Validador Pro</title>
     <style>
         body { font-family: sans-serif; background: #121212; color: #fff; text-align: center; }
-        .box { background: #1e1e1e; padding: 20px; margin: 10px; border-radius: 10px; border: 1px solid #333; }
-        #bar { height: 15px; width: 0%; background: #00ff00; border-radius: 5px; }
-        button { padding: 20px; background: #007bff; color: white; border: none; border-radius: 10px; cursor: pointer; }
+        .box { background: #1e1e1e; padding: 15px; margin: 10px; border-radius: 10px; border: 1px solid #333; }
+        #bar { height: 10px; width: 0%; background: #00ff00; border-radius: 5px; }
+        button { padding: 15px; background: #28a745; color: white; border: none; border-radius: 8px; cursor: pointer; }
     </style>
 </head>
 <body>
-    <h1>Painel ESP32-C3</h1>
-    <button onclick="conectar()">CONECTAR TUDO</button>
-    <div class="box">GPS: <span id="gps">Aguardando...</span></div>
+    <h2>Dashboard ESP32-C3</h2>
+    <button onclick="conectar()">INICIAR CONEXÃO</button>
+    <div class="box">GPS: <span id="gps">Aguardando Fix...</span></div>
     <div class="box">Botão: <span id="btn">---</span></div>
-    <div class="box">Monitor Áudio:<div style="background:#000;width:100%;"><div id="bar"></div></div></div>
+    <div class="box">Nível de Áudio: <div style="background:#000; width:100%;"><div id="bar"></div></div></div>
 
     <script>
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
@@ -25,33 +25,36 @@
 
         async function conectar() {
             try {
-                // Força o início do contexto de áudio
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 11025 });
-                if (audioCtx.state === 'suspended') await audioCtx.resume();
-
                 const device = await navigator.bluetooth.requestDevice({ 
-                    filters: [{ namePrefix: 'ESP32' }], 
-                    optionalServices: [SERVICE_UUID] 
+                    filters: [{ namePrefix: 'ESP32' }], optionalServices: [SERVICE_UUID] 
                 });
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
 
-                // Ativar Botão
+                // GPS
+                const gChar = await service.getCharacteristic(UUIDS.gps);
+                await gChar.startNotifications();
+                gChar.addEventListener('characteristicvaluechanged', e => {
+                    document.getElementById('gps').innerText = new TextDecoder().decode(e.target.value);
+                });
+
+                // BOTÃO
                 const bChar = await service.getCharacteristic(UUIDS.btn);
                 await bChar.startNotifications();
                 bChar.addEventListener('characteristicvaluechanged', e => {
                     document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO";
                 });
 
-                // Ativar Áudio
+                // ÁUDIO
                 const aChar = await service.getCharacteristic(UUIDS.aud);
                 await aChar.startNotifications();
                 aChar.addEventListener('characteristicvaluechanged', e => {
                     tocar(new Uint8Array(e.target.value.buffer));
                 });
 
-                alert("Sistema Online!");
-            } catch (v) { alert("Erro: " + v); }
+                console.log("Conectado!");
+            } catch (v) { console.error(v); alert("Falha: " + v); }
         }
 
         function tocar(data) {
@@ -60,15 +63,13 @@
             const channel = buffer.getChannelData(0);
             let pico = 0;
             for (let i = 0; i < data.length; i++) {
-                channel[i] = ((data[i] - 128) / 128) * 6.0;
+                channel[i] = ((data[i] - 128) / 128) * 5.0;
                 pico += Math.abs(channel[i]);
             }
-            document.getElementById('bar').style.width = Math.min((pico/data.length)*300, 100) + "%";
-
+            document.getElementById('bar').style.width = Math.min((pico/data.length)*400, 100) + "%";
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
-            
             const agora = audioCtx.currentTime;
             if (proximoTempo < agora) proximoTempo = agora + 0.05;
             source.start(proximoTempo);
