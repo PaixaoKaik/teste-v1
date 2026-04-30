@@ -3,106 +3,246 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel ESP32-C3 Ultra</title>
+    <title>SAFEA - Segurança Feminina</title>
     <style>
-        body { font-family: sans-serif; background: #121212; color: white; text-align: center; }
-        .box { background: #1e1e1e; padding: 20px; margin: 10px; border-radius: 10px; border: 1px solid #444; }
-        #bar { height: 15px; width: 0%; background: #00ff00; border-radius: 5px; transition: width 0.05s; }
-        button { padding: 20px; font-weight: bold; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 10px; }
+        :root {
+            --pink-primary: #ff4b81;
+            --pink-soft: #ffe4ec;
+            --white: #ffffff;
+            --text-dark: #4a4a4a;
+            --shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--white);
+            color: var(--text-dark);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        header {
+            width: 100%;
+            padding: 20px 0;
+            text-align: center;
+            background-color: var(--white);
+            border-bottom: 2px solid var(--pink-soft);
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--pink-primary);
+            letter-spacing: 3px;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 600px;
+            margin-top: 30px;
+            padding: 20px;
+        }
+
+        .card {
+            background: var(--white);
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--pink-soft);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .disconnected { background: #fee2e2; color: #dc2626; }
+        .connected { background: #dcfce7; color: #16a34a; }
+
+        .data-label {
+            font-size: 0.85rem;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 5px;
+        }
+
+        .data-value {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        button {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 50px;
+            background-color: var(--pink-primary);
+            color: white;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.3s;
+            box-shadow: 0 4px 10px rgba(255, 75, 129, 0.3);
+        }
+
+        button:hover {
+            background-color: #e63e70;
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        #btn-log {
+            font-family: monospace;
+            font-size: 0.9rem;
+            background: #fdf2f5;
+            padding: 10px;
+            border-radius: 10px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .footer-text {
+            margin-top: auto;
+            padding: 20px;
+            font-size: 0.8rem;
+            color: #aaa;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
-    <h1>Painel ESP32-C3</h1>
-    <button onclick="conectar()">CONECTAR VIA BLUETOOTH</button>
 
-    <div class="box">GPS: <span id="gps">---</span></div>
-    <div class="box">Botão: <span id="btn">SOLTO</span></div>
-    <div class="box">Voz:<div style="background:#000; width:100%; margin-top:10px;"><div id="bar"></div></div></div>
+    <header>
+        <div class="logo">SAFEA</div>
+        <p style="color: var(--pink-primary); margin: 5px 0 0 0; font-size: 0.9rem;">Proteção em cada clique</p>
+    </header>
+
+    <div class="container">
+        <button id="connectBtn">CONECTAR DISPOSITIVO</button>
+
+        <div class="card" style="margin-top: 30px;">
+            <div id="status" class="status-badge disconnected">Desconectado</div>
+            
+            <div class="data-label">Localização (GPS)</div>
+            <div id="gps-data" class="data-value">Aguardando...</div>
+
+            <div class="data-label">Nível de Bateria</div>
+            <div id="batt-data" class="data-value">--%</div>
+
+            <div class="data-label">Última Atividade do Botão</div>
+            <div id="btn-log">Nenhum evento detectado.</div>
+        </div>
+
+        <div class="card" id="audio-card" style="border-left: 5px solid var(--pink-primary);">
+            <div class="data-label">Monitoramento de Áudio</div>
+            <div id="audio-status" class="data-value">Inativo</div>
+            <canvas id="visualizer" style="width: 100%; height: 60px; background: #fffafb;"></canvas>
+        </div>
+    </div>
+
+    <div class="footer-text">
+        Plataforma SAFEA &copy; 2026<br>
+        Sistema de monitoramento de emergência.
+    </div>
 
     <script>
+        // Configurações dos UUIDs (Devem ser iguais ao do ESP32)
         const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-        const UUIDS = {
-            gps: "6e400002-b5a3-f393-e0a9-e50e24dcca9e",
-            btn: "6e400003-b5a3-f393-e0a9-e50e24dcca9e",
-            aud: "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
-        };
+        const UUID_GPS = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+        const UUID_BTN = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+        const UUID_AUDIO = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
+        const UUID_BATT = "6e400005-b5a3-f393-e0a9-e50e24dcca9e";
 
-        let audioCtx, proximoTempo = 0;
+        let device, server;
+        const connectBtn = document.getElementById('connectBtn');
+        const statusBadge = document.getElementById('status');
 
-        async function conectar() {
+        connectBtn.addEventListener('click', async () => {
             try {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 11025 });
-                const device = await navigator.bluetooth.requestDevice({
-                    filters: [{ namePrefix: 'ESP32' }],
+                statusBadge.textContent = "Pareando...";
+                device = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: "ESP32-SUPERMINI" }],
                     optionalServices: [SERVICE_UUID]
                 });
-                const server = await device.gatt.connect();
+
+                server = await device.gatt.connect();
                 const service = await server.getPrimaryService(SERVICE_UUID);
 
-                const btnChar = await service.getCharacteristic(UUIDS.btn);
-                await btnChar.startNotifications();
-                btnChar.oncharacteristicvaluechanged = e => {
-                    document.getElementById('btn').innerText = e.target.value.getUint8(0) ? "PRESSIONADO" : "SOLTO";
-                };
+                statusBadge.textContent = "Conectado";
+                statusBadge.className = "status-badge connected";
+                connectBtn.style.display = "none";
 
-                const audChar = await service.getCharacteristic(UUIDS.aud);
-                await audChar.startNotifications();
-                audChar.oncharacteristicvaluechanged = e => {
-                    tocar(new Uint8Array(e.target.value.buffer));
-                };
+                // Inscrição nas Características
+                setupNotification(service, UUID_GPS, (val) => {
+                    document.getElementById('gps-data').textContent = new TextDecoder().decode(val);
+                });
 
-                const gpsChar = await service.getCharacteristic(UUIDS.gps);
-                await gpsChar.startNotifications();
-                gpsChar.oncharacteristicvaluechanged = e => {
-                    document.getElementById('gps').innerText = new TextDecoder().decode(e.target.value);
-                };
+                setupNotification(service, UUID_BATT, (val) => {
+                    document.getElementById('batt-data').textContent = new TextDecoder().decode(val);
+                });
 
-                alert("Conectado com Sucesso!");
-            } catch (err) { alert(err); }
+                setupNotification(service, UUID_BTN, (val) => {
+                    const msg = new TextDecoder().decode(val);
+                    const log = document.getElementById('btn-log');
+                    const time = new Date().toLocaleTimeString();
+                    log.innerHTML = `[${time}] Botão: ${msg}<br>` + log.innerHTML;
+                });
+
+                setupNotification(service, UUID_AUDIO, (val) => {
+                    handleAudio(val);
+                });
+
+                device.addEventListener('gattserverdisconnected', onDisconnected);
+
+            } catch (error) {
+                console.log(error);
+                statusBadge.textContent = "Erro na Conexão";
+                statusBadge.className = "status-badge disconnected";
+            }
+        });
+
+        async function setupNotification(service, uuid, callback) {
+            const char = await service.getCharacteristic(uuid);
+            await char.startNotifications();
+            char.addEventListener('characteristicvaluechanged', (event) => {
+                callback(event.target.value);
+            });
         }
 
-        function tocar(data) {
-    if (!audioCtx) return;
-    const samples = data.length;
-    const buffer = audioCtx.createBuffer(1, samples, 11025);
-    const channel = buffer.getChannelData(0);
-    let energia = 0;
+        function onDisconnected() {
+            statusBadge.textContent = "Desconectado";
+            statusBadge.className = "status-badge disconnected";
+            connectBtn.style.display = "block";
+        }
 
-    for (let i = 0; i < samples; i++) {
-        let v = (data[i] - 128) / 128;
-        
-        // Suavização nas bordas do buffer (Fade-in/out) para evitar estalos
-        if (i < 10) v *= (i / 10); 
-        if (i > samples - 10) v *= ((samples - i) / 10);
-
-        channel[i] = v * 3.0; // Ganho moderado
-        energia += Math.abs(v);
-    }
-
-    const volumeMedio = energia / samples;
-    document.getElementById('bar').style.width = Math.min(volumeMedio * 400, 100) + "%";
-
-    // Gate mais "inteligente"
-    if (volumeMedio < 0.04) return; 
-
-    const source = audioCtx.createBufferSource();
-    source.buffer = buffer;
-    
-    // Adiciona um pequeno filtro passa-baixa no próprio navegador para abafar o chiado agudo
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.value = 4000; // Corta ruídos muito agudos (chiado metálico)
-    
-    source.connect(filter);
-    filter.connect(audioCtx.destination);
-
-    const agora = audioCtx.currentTime;
-    // Aumentamos o "look-ahead" para 0.06 para dar fôlego ao Bluetooth
-    if (proximoTempo < agora) proximoTempo = agora + 0.06;
-    
-    source.start(proximoTempo);
-    proximoTempo += buffer.duration;
-}
+        // Lógica Básica de Áudio (Visualizer)
+        const canvas = document.getElementById('visualizer');
+        const ctx = canvas.getContext('2d');
+        function handleAudio(value) {
+            document.getElementById('audio-status').textContent = "GRAVANDO / RECEBENDO";
+            document.getElementById('audio-status').style.color = "var(--pink-primary)";
+            
+            // Desenha um visualizador simples baseado nos bytes recebidos
+            const data = new Uint8Array(value.buffer);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#ff4b81';
+            for (let i = 0; i < data.length; i++) {
+                const h = (data[i] / 255) * canvas.height;
+                ctx.fillRect(i * (canvas.width / data.length), canvas.height - h, 2, h);
+            }
+        }
     </script>
 </body>
 </html>
